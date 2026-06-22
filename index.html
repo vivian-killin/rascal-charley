@@ -6,6 +6,8 @@
 <title>🐾 Rascal Dog Monitor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <style>
   @keyframes fade-up   { from { opacity:0; transform:translateY(6px);  } to { opacity:1; transform:translateY(0);    } }
   @keyframes slide-down{ from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0);    } }
@@ -97,38 +99,63 @@ let state = {
   dismissedBannerReasons: [],
 };
 
+// ─── FIREBASE ───────────────────────────────────────────────────────────────
+
+firebase.initializeApp({
+  apiKey: "AIzaSyCuddjyuaJf49kqjjG-II0wroS-MWHLWos",
+  authDomain: "rascal-charley.firebaseapp.com",
+  projectId: "rascal-charley",
+  storageBucket: "rascal-charley.firebasestorage.app",
+  messagingSenderId: "963355660140",
+  appId: "1:963355660140:web:25bb16c97e24d30780ad49",
+});
+const db = firebase.firestore();
+const DOC = db.collection('rascal').doc('main');
+
 // ─── PERSISTENCE ────────────────────────────────────────────────────────────
 
+function applyData(d) {
+  state.dogName   = d.dogName   || 'Rascal';
+  state.theme     = d.theme     || 'warm';
+  state.setupDone = !!d.setupDone;
+  state.mealTimes = d.mealTimes || state.mealTimes;
+  state.days      = d.days      || {};
+  state.sections  = d.sections  || state.sections;
+  state.setupForm = {
+    dogName:   d.dogName                  || 'Rascal',
+    breakfast: (d.mealTimes||{}).breakfast || '08:00',
+    lunch:     (d.mealTimes||{}).lunch     || '12:00',
+    dinner:    (d.mealTimes||{}).dinner    || '18:00',
+    snack:     (d.mealTimes||{}).snack     || '21:00',
+    theme:     d.theme || 'warm',
+  };
+}
+
 function save() {
-  try {
-    const { dogName, theme, setupDone, mealTimes, days, sections } = state;
-    localStorage.setItem('rascal_v2', JSON.stringify({ dogName, theme, setupDone, mealTimes, days, sections }));
-  } catch(e) {}
+  const { dogName, theme, setupDone, mealTimes, days, sections } = state;
+  const data = { dogName, theme, setupDone, mealTimes, days, sections };
+  // Write to Firestore (primary) and localStorage (offline fallback)
+  DOC.set(data).catch(()=>{});
+  try { localStorage.setItem('rascal_v2', JSON.stringify(data)); } catch(e) {}
 }
 
 function load() {
+  state.dashDate = todayStr();
+  // Apply localStorage immediately so UI isn't blank while Firestore loads
   try {
     const raw = localStorage.getItem('rascal_v2');
-    const today = todayStr();
-    state.dashDate = today;
-    if (raw) {
-      const d = JSON.parse(raw);
-      state.dogName    = d.dogName    || 'Rascal';
-      state.theme      = d.theme      || 'warm';
-      state.setupDone  = !!d.setupDone;
-      state.mealTimes  = d.mealTimes  || state.mealTimes;
-      state.days       = d.days       || {};
-      state.sections   = d.sections   || state.sections;
-      state.setupForm  = {
-        dogName:   d.dogName                  || 'Rascal',
-        breakfast: (d.mealTimes||{}).breakfast || '08:00',
-        lunch:     (d.mealTimes||{}).lunch     || '12:00',
-        dinner:    (d.mealTimes||{}).dinner    || '18:00',
-        snack:     (d.mealTimes||{}).snack     || '21:00',
-        theme:     d.theme || 'warm',
-      };
-    }
+    if (raw) applyData(JSON.parse(raw));
   } catch(e) {}
+  render();
+
+  // Subscribe to Firestore — updates render whenever Kim or Vivian changes anything
+  DOC.onSnapshot(snap => {
+    if (snap.exists) {
+      applyData(snap.data());
+      try { localStorage.setItem('rascal_v2', JSON.stringify(snap.data())); } catch(e) {}
+    }
+    render();
+  }, () => { /* offline — already showing localStorage data */ });
 }
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
@@ -757,7 +784,6 @@ function render() {
 // ─── INIT ────────────────────────────────────────────────────────────────────
 
 load();
-render();
 setInterval(render, 60000);
 </script>
 </body>
