@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>🐾 Rascal Dog Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+<style>
+  @keyframes fade-up   { from { opacity:0; transform:translateY(6px);  } to { opacity:1; transform:translateY(0);    } }
+  @keyframes slide-down{ from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0);    } }
+  @keyframes pop-in    { 0%{opacity:0;transform:scale(0.88);} 100%{opacity:1;transform:scale(1);} }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; font-family:'DM Sans',system-ui,-apple-system,sans-serif; font-size:16px; }
+  input,textarea,button,select { font-family:inherit; }
+  textarea { resize:none; outline:none; }
+  input:focus,textarea:focus,select:focus { outline:none; }
+  button { cursor:pointer; }
+  .fade-up    { animation:fade-up    0.2s ease; }
+  .slide-down { animation:slide-down 0.18s ease; }
+  .pop-in     { animation:pop-in     0.22s ease; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// ─── DATA ───────────────────────────────────────────────────────────────────
+
+const TASKS = {
+  morning: [
+    { id:'b_food',       name:'Breakfast — food',           emoji:'🍖', helper:'½ cup Hills z/d. Left side bowl only. Feed away from other dogs.',        type:'checkbox', meal:true  },
+    { id:'b_meds',       name:'Breakfast — meds',           emoji:'💊', helper:'Capsule + pill at breakfast only — skip at lunch and dinner.',             type:'checkbox', meal:false },
+    { id:'b_prev_snack', name:'Bedtime snack (last night)', emoji:'🌙', helper:'Did he get a small kibble snack last night? Helps prevent morning vomit.', type:'checkbox', meal:false },
+    { id:'wiener_wipe',  name:'Wiener wipe',                emoji:'🧻', helper:'Once daily — Douxo pad wipe.',                                             type:'checkbox', meal:false },
+    { id:'poop_am',      name:'Poop check — AM',            emoji:'💩', helper:null,                                                                       type:'poop',     meal:false },
+  ],
+  midday: [
+    { id:'l_food',     name:'Lunch — food',        emoji:'🍖', helper:'½ cup Hills z/d. No capsule or pill.',                   type:'checkbox', meal:true  },
+    { id:'wiener_vis', name:'Wiener visual check', emoji:'👁️', helper:'Look for swelling, discharge in fur, or unusual smell.', type:'checkbox', meal:false },
+  ],
+  evening: [
+    { id:'d_food',  name:'Dinner — food',   emoji:'🍖', helper:'½ cup Hills z/d. No capsule or pill.',                        type:'checkbox', meal:true  },
+    { id:'poop_pm', name:'Poop check — PM', emoji:'💩', helper:null,                                                           type:'poop',     meal:false },
+    { id:'b_snack', name:'Bedtime snack',   emoji:'🌙', helper:'Small kibble snack before bed — helps prevent morning vomit.', type:'checkbox', meal:false },
+  ],
+  asNeeded: [
+    { id:'fortiflora', name:'Fortiflora powder',        emoji:'✨', helper:"Sprinkle on food. ~1 packet across a day or two, amount doesn't matter much.", type:'checkbox' },
+    { id:'fiber',      name:'Fiber powder',             emoji:'🌾', helper:'Only if poop is runny. Less than ⅛ tsp per meal — barely any.',                type:'checkbox' },
+    { id:'ointment',   name:'Wiener ointment',          emoji:'🧴', helper:'If signs of infection (bad smell, white ooze) — apply to tip.',                type:'checkbox' },
+    { id:'cone',       name:'Cone',                     emoji:'🐾', helper:"Put on if he's been licking his paws and you need to leave him alone.",         type:'checkbox' },
+    { id:'ear',        name:'Ear check',                emoji:'👂', helper:"If he's scratching excessively — look for redness or smell inside ear.",        type:'checkbox' },
+    { id:'vomit',      name:'Vomit',                    emoji:'🤢', helper:'Log if he vomited. Add a note with timing if you can.',                         type:'checkbox' },
+    { id:'low_energy', name:'Low energy / not himself', emoji:'😞', helper:'Log if something seems off with his vibe.',                                     type:'checkbox' },
+  ],
+};
+
+const ALL_SCHED = [...TASKS.morning, ...TASKS.midday, ...TASKS.evening];
+
+const THEMES = {
+  warm: { bg:'oklch(96% 0.02 60)',  card:'#fff', accent:'oklch(50% 0.17 35)',  text:'oklch(18% 0.02 60)',  sub:'oklch(52% 0.02 60)',  br:'oklch(87% 0.02 60)'  },
+  cool: { bg:'oklch(97% 0.01 250)', card:'#fff', accent:'oklch(46% 0.15 170)', text:'oklch(17% 0.01 250)', sub:'oklch(50% 0.02 250)', br:'oklch(87% 0.01 250)' },
+};
+
+const STATUS_STYLE = {
+  logged:   { bg:'oklch(95% 0.08 145)', br:'oklch(68% 0.18 145)', tc:'oklch(28% 0.14 145)' },
+  pending:  { bg:'oklch(97% 0.07 80)',  br:'oklch(72% 0.16 80)',  tc:'oklch(34% 0.13 80)'  },
+  overdue:  { bg:'oklch(97% 0.06 20)',  br:'oklch(74% 0.15 20)',  tc:'oklch(36% 0.17 20)'  },
+  skipped:  { bg:'oklch(95% 0.005 0)',  br:'oklch(82% 0.005 0)',  tc:'oklch(58% 0.005 0)'  },
+  upcoming: { bg:null, br:null, tc:null },
+  asNeeded: { bg:null, br:null, tc:null },
+};
+
+const DOT = { green:'oklch(55% 0.2 145)', yellow:'oklch(68% 0.17 80)', red:'oklch(58% 0.2 25)', gray:'oklch(76% 0.005 0)' };
+
+const PILL = {
+  green:  { bg:'oklch(88% 0.15 145)', color:'oklch(28% 0.18 145)' },
+  yellow: { bg:'oklch(93% 0.12 80)',  color:'oklch(34% 0.15 80)'  },
+  red:    { bg:'oklch(92% 0.12 25)',  color:'oklch(34% 0.18 25)'  },
+  gray:   { bg:'oklch(90% 0.005 0)',  color:'oklch(44% 0.005 0)'  },
+};
+
+const POOP_COL = { 'Normal':'green', 'Hard lumps':'yellow', 'Runny':'yellow', 'Bloody':'red', 'Mucus-y':'red' };
+const POOP_OPTS = ['Normal','Hard lumps','Runny','Bloody','Mucus-y'];
+
+// ─── STATE ──────────────────────────────────────────────────────────────────
+
+let state = {
+  view: 'checklist',
+  dogName: 'Rascal',
+  theme: 'warm',
+  setupDone: false,
+  mealTimes: { breakfast:'08:00', lunch:'12:00', dinner:'18:00', snack:'21:00' },
+  setupForm: { dogName:'Rascal', breakfast:'08:00', lunch:'12:00', dinner:'18:00', snack:'21:00', theme:'warm' },
+  days: {},
+  sections: { morning:true, midday:true, evening:true, asNeeded:true },
+  dashDate: null,
+  dismissedBannerReasons: [],
+};
+
+// ─── PERSISTENCE ────────────────────────────────────────────────────────────
+
+function save() {
+  try {
+    const { dogName, theme, setupDone, mealTimes, days, sections } = state;
+    localStorage.setItem('rascal_v2', JSON.stringify({ dogName, theme, setupDone, mealTimes, days, sections }));
+  } catch(e) {}
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem('rascal_v2');
+    const today = todayStr();
+    state.dashDate = today;
+    if (raw) {
+      const d = JSON.parse(raw);
+      state.dogName    = d.dogName    || 'Rascal';
+      state.theme      = d.theme      || 'warm';
+      state.setupDone  = !!d.setupDone;
+      state.mealTimes  = d.mealTimes  || state.mealTimes;
+      state.days       = d.days       || {};
+      state.sections   = d.sections   || state.sections;
+      state.setupForm  = {
+        dogName:   d.dogName                  || 'Rascal',
+        breakfast: (d.mealTimes||{}).breakfast || '08:00',
+        lunch:     (d.mealTimes||{}).lunch     || '12:00',
+        dinner:    (d.mealTimes||{}).dinner    || '18:00',
+        snack:     (d.mealTimes||{}).snack     || '21:00',
+        theme:     d.theme || 'warm',
+      };
+    }
+  } catch(e) {}
+}
+
+// ─── HELPERS ────────────────────────────────────────────────────────────────
+
+function todayStr() { return new Date().toISOString().slice(0,10); }
+
+function dayOffset(date, n) {
+  const d = new Date(date + 'T12:00:00');
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0,10);
+}
+
+function parseTime(t) {
+  const [h,m] = (t||'00:00').split(':').map(Number);
+  return h + m/60;
+}
+
+function getWinMap(mt) {
+  const B = parseTime(mt.breakfast), L = parseTime(mt.lunch),
+        D = parseTime(mt.dinner),    S = parseTime(mt.snack);
+  return {
+    b_food:       [B-0.5, B+2],
+    b_meds:       [B-0.5, B+2],
+    b_prev_snack: [B-0.5, B+2.5],
+    wiener_wipe:  [B,     B+3],
+    poop_am:      [B,     B+3],
+    l_food:       [L-0.5, L+2],
+    wiener_vis:   [L,     L+3],
+    d_food:       [D-0.5, D+2],
+    poop_pm:      [D,     D+4],
+    b_snack:      [S-0.5, S+1.5],
+  };
+}
+
+function getDayData(date) {
+  return (state.days[date] || {}).taskData || {};
+}
+
+function nowHours() {
+  return new Date().getHours() + new Date().getMinutes()/60;
+}
+
+function taskStatus(task, td, winMap) {
+  if (td.skipped)             return 'skipped';
+  if (td.checked || td.poopVal) return 'logged';
+  const win = winMap[task.id];
+  if (!win)                   return 'asNeeded';
+  const h = nowHours();
+  if (h < win[0])             return 'upcoming';
+  if (h <= win[1]+0.5)        return 'pending';
+  return 'overdue';
+}
+
+function updateTask(id, date, fn, shouldSave=true) {
+  if (!state.days[date]) state.days[date] = { taskData:{} };
+  if (!state.days[date].taskData) state.days[date].taskData = {};
+  const td = state.days[date].taskData[id] || {};
+  fn(td);
+  state.days[date].taskData[id] = td;
+  if (shouldSave) save();
+  render();
+}
+
+function getBannerReasons(today) {
+  const td = getDayData(today);
+  const reasons = [];
+  const pAM = (td.poop_am||{}).poopVal;
+  const pPM = (td.poop_pm||{}).poopVal;
+  if (pAM==='Bloody'||pAM==='Mucus-y') reasons.push('AM poop: '+pAM);
+  if (pPM==='Bloody'||pPM==='Mucus-y') reasons.push('PM poop: '+pPM);
+  if ((td.vomit||{}).checked)           reasons.push('Vomit logged');
+  if ((td.low_energy||{}).checked)      reasons.push('Low energy');
+  if ((td.wiener_vis||{}).abnormal)     reasons.push('Wiener flagged abnormal');
+  const ytd = getDayData(dayOffset(today,-1));
+  const checks = [(ytd.poop_am||{}).poopVal,(ytd.poop_pm||{}).poopVal,pAM,pPM].filter(Boolean);
+  for (let i=0;i<checks.length-1;i++) {
+    if (checks[i]==='Runny'&&checks[i+1]==='Runny') { reasons.push('Runny poop 2nd time in a row'); break; }
+  }
+  return reasons;
+}
+
+// ─── RENDER HELPERS ─────────────────────────────────────────────────────────
+
+function el(tag, attrs, ...children) {
+  const e = document.createElement(tag);
+  for (const [k,v] of Object.entries(attrs||{})) {
+    if (k==='style' && typeof v==='object') Object.assign(e.style, v);
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2).toLowerCase(), v);
+    else if (k==='className') e.className = v;
+    else e.setAttribute(k,v);
+  }
+  for (const c of children.flat()) {
+    if (c==null||c===false) continue;
+    e.appendChild(typeof c==='string'||typeof c==='number' ? document.createTextNode(String(c)) : c);
+  }
+  return e;
+}
+
+function div(attrs,...children) { return el('div',attrs,...children); }
+function span(attrs,...children) { return el('span',attrs,...children); }
+function btn(attrs,...children) { return el('button',attrs,...children); }
+
+function css(obj) { return obj; }
+
+// ─── CHECKLIST TASK CARD ─────────────────────────────────────────────────────
+
+function renderCheckboxTask(task, td, status, T, today, winMap) {
+  const S = STATUS_STYLE[status] || STATUS_STYLE.upcoming;
+  const logged  = status==='logged';
+  const skipped = status==='skipped';
+  const cardBg     = S.bg || T.card;
+  const cardBorder = S.br || T.br;
+  const nameColor  = S.tc || T.text;
+  const isAbnormal = !!td.abnormal;
+  const noteOpen   = !!td.noteOpen;
+  const isWienerVis = task.id==='wiener_vis';
+  const showVomitNote = task.id==='vomit' && !!td.checked &&
+    !((getDayData(today)['b_prev_snack']||{}).checked);
+
+  const card = div({style:{background:cardBg,border:`1.5px solid ${cardBorder}`,borderRadius:'14px',padding:'14px',animation:'fade-up 0.2s ease'}});
+
+  // Main row: checkbox + label
+  const checkBg = logged ? 'oklch(50% 0.2 145)' : 'transparent';
+  const checkBorderColor = logged ? 'oklch(50% 0.2 145)' : T.br;
+
+  const checkBox = div({style:{width:'26px',height:'26px',flexShrink:'0',borderRadius:'8px',background:checkBg,border:`2px solid ${checkBorderColor}`,display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.15s',marginTop:'1px'}});
+  if (logged)  checkBox.appendChild(span({style:{color:'white',fontSize:'13px',fontWeight:'700',lineHeight:'1'}},'✓'));
+  if (skipped) checkBox.appendChild(span({style:{color:'oklch(60% 0.005 0)',fontSize:'16px',fontWeight:'600',lineHeight:'1'}},'—'));
+
+  const labelDiv = div({style:{flex:'1',minWidth:'0'}},
+    div({style:{fontSize:'16px',fontWeight:'500',color:nameColor,lineHeight:'1.3'}},`${task.emoji} ${task.name}`),
+    task.helper ? div({style:{fontSize:'13px',color:T.sub,marginTop:'3px',lineHeight:'1.45'}},task.helper) : null,
+  );
+
+  const mainRow = div({style:{display:'flex',alignItems:'flex-start',gap:'12px',cursor:'pointer',userSelect:'none',minHeight:'28px'},
+    onclick:()=>{
+      updateTask(task.id, today, t=>{
+        if(t.skipped){t.skipped=false;}else{t.checked=!t.checked;}
+      });
+    }
+  }, checkBox, labelDiv);
+  card.appendChild(mainRow);
+
+  // Sub-actions row
+  const noteLabel = noteOpen ? '↑ hide note' : (td.note ? '📝 edit note' : '+ add note');
+  const skipLabel = skipped ? 'undo skip' : "wasn't hungry";
+
+  const subRow = div({style:{paddingLeft:'38px',marginTop:'6px',display:'flex',alignItems:'center',flexWrap:'wrap'}},
+    btn({style:{background:'none',border:'none',padding:'4px 6px 4px 0',fontSize:'12px',color:T.sub,cursor:'pointer',minHeight:'32px'},
+      onclick:()=>updateTask(task.id,today,t=>{t.noteOpen=!t.noteOpen;},false)
+    }, noteLabel),
+    task.meal ? span({style:{fontSize:'12px',color:T.br,paddingRight:'6px'}},' · ') : null,
+    task.meal ? btn({style:{background:'none',border:'none',padding:'4px 0',fontSize:'12px',color:T.sub,cursor:'pointer',minHeight:'32px'},
+      onclick:()=>updateTask(task.id,today,t=>{if(t.skipped){t.skipped=false;}else{t.skipped=true;t.checked=false;}})
+    }, skipLabel) : null,
+  );
+  card.appendChild(subRow);
+
+  // Note textarea
+  if (noteOpen) {
+    const ta = el('textarea',{
+      placeholder:'Add a note…',
+      style:{display:'block',width:'100%',padding:'10px 12px',borderRadius:'10px',border:`1.5px solid ${T.br}`,fontSize:'14px',minHeight:'64px',background:T.bg,color:T.text,lineHeight:'1.45',marginTop:'2px',marginLeft:'0px',boxSizing:'border-box'}
+    });
+    ta.value = td.note||'';
+    ta.addEventListener('input', e=>updateTask(task.id,today,t=>{t.note=e.target.value;}));
+    const wrap = div({style:{paddingLeft:'38px',marginTop:'2px'}},ta);
+    card.appendChild(wrap);
+  }
+
+  // Wiener abnormal toggle
+  if (isWienerVis) {
+    const abnBg = isAbnormal ? 'oklch(96% 0.09 20)' : 'transparent';
+    const abnBorderColor = isAbnormal ? 'oklch(72% 0.16 20)' : T.br;
+    const abnColor = isAbnormal ? 'oklch(36% 0.17 20)' : T.sub;
+    const abnLabel = isAbnormal ? '🚩 Flagged abnormal' : 'Flag as abnormal';
+    const wrap = div({style:{paddingLeft:'38px',marginTop:'8px'}},
+      btn({style:{padding:'8px 14px',minHeight:'38px',borderRadius:'20px',border:`1.5px solid ${abnBorderColor}`,background:abnBg,color:abnColor,fontSize:'13px',fontWeight:'500',cursor:'pointer',transition:'all 0.15s'},
+        onclick:()=>updateTask(task.id,today,t=>{t.abnormal=!t.abnormal;})
+      }, abnLabel)
+    );
+    card.appendChild(wrap);
+  }
+
+  // Vomit / bedtime snack correlation note
+  if (showVomitNote) {
+    const wrap = div({style:{paddingLeft:'38px',marginTop:'8px'}},
+      div({style:{background:'oklch(96% 0.07 80)',border:'1px solid oklch(80% 0.12 80)',borderRadius:'10px',padding:'10px 12px',fontSize:'13px',color:'oklch(36% 0.12 80)',lineHeight:'1.5'}},
+        '⚠️ Bedtime snack wasn\'t logged last night — this may be related.'
+      )
+    );
+    card.appendChild(wrap);
+  }
+
+  return card;
+}
+
+function renderPoopTask(task, td, status, T, today) {
+  const S = STATUS_STYLE[status] || STATUS_STYLE.upcoming;
+  const cardBg     = S.bg || T.card;
+  const cardBorder = S.br || T.br;
+  const nameColor  = S.tc || T.text;
+
+  const optBtns = POOP_OPTS.map(opt=>{
+    const sel = td.poopVal===opt;
+    return btn({
+      style:{padding:'8px 12px',minHeight:'38px',borderRadius:'20px',border:`1.5px solid ${sel?T.accent:T.br}`,background:sel?T.accent:T.card,color:sel?'#fff':T.text,fontSize:'13px',fontWeight:sel?'600':'400',transition:'all 0.15s',cursor:'pointer'},
+      onclick:()=>updateTask(task.id,today,t=>{t.poopVal=t.poopVal===opt?null:opt;})
+    }, opt);
+  });
+
+  return div({style:{background:cardBg,border:`1.5px solid ${cardBorder}`,borderRadius:'14px',padding:'14px',animation:'fade-up 0.2s ease'}},
+    div({style:{fontSize:'16px',fontWeight:'500',color:nameColor,marginBottom:'10px'}},`${task.emoji} ${task.name}`),
+    div({style:{display:'flex',gap:'6px',flexWrap:'wrap'}},...optBtns)
+  );
+}
+
+// ─── CHECKLIST VIEW ─────────────────────────────────────────────────────────
+
+function renderChecklist(T) {
+  const today   = todayStr();
+  const winMap  = getWinMap(state.mealTimes);
+  const todayData = getDayData(today);
+
+  if (!state.setupDone) {
+    return div({style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'56px 24px',textAlign:'center'}},
+      div({style:{fontSize:'60px',marginBottom:'18px',animation:'pop-in 0.3s ease'}},'🐾'),
+      el('h2',{style:{margin:'0 0 10px',fontSize:'22px',fontWeight:'700',color:T.text}},'Welcome!'),
+      el('p',{style:{margin:'0 0 30px',fontSize:'15px',color:T.sub,lineHeight:'1.65',maxWidth:'280px'}},
+        `Set up ${state.dogName}'s meal times so the checklist knows when tasks are due.`),
+      btn({style:{padding:'16px 36px',borderRadius:'14px',border:'none',background:T.accent,color:'white',fontSize:'17px',fontWeight:'700',cursor:'pointer',minHeight:'56px'},
+        onclick:()=>{state.view='setup';render();}
+      },'Go to Setup')
+    );
+  }
+
+  // Banner
+  const bannerReasons = getBannerReasons(today);
+  const showBanner = bannerReasons.length>0 && bannerReasons.some(r=>!state.dismissedBannerReasons.includes(r));
+
+  const secDefs = [
+    { key:'morning',  label:'Morning',   icon:'☀️',  tasks:TASKS.morning  },
+    { key:'midday',   label:'Midday',    icon:'🌤️', tasks:TASKS.midday   },
+    { key:'evening',  label:'Evening',   icon:'🌙',  tasks:TASKS.evening  },
+    { key:'asNeeded', label:'As-Needed', icon:'⚡',  tasks:TASKS.asNeeded },
+  ];
+
+  const sections = secDefs.map(sec=>{
+    const isOpen = state.sections[sec.key]!==false;
+    const sectionEl = div({});
+
+    const headerBtn = btn({
+      style:{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',background:'none',border:'none',padding:'12px 4px 8px',color:T.sub,fontSize:'12px',fontWeight:'600',textTransform:'uppercase',letterSpacing:'0.1em',minHeight:'44px',cursor:'pointer'},
+      onclick:()=>{state.sections[sec.key]=!isOpen;render();}
+    },
+      span({},[`${sec.icon}  ${sec.label}`]),
+      span({style:{fontSize:'14px'}},isOpen?'▾':'▸')
+    );
+    sectionEl.appendChild(headerBtn);
+
+    if (isOpen) {
+      const taskList = div({style:{display:'flex',flexDirection:'column',gap:'6px',animation:'slide-down 0.18s ease'}});
+      for (const task of sec.tasks) {
+        const td = (todayData[task.id])||{};
+        const status = taskStatus(task, td, winMap);
+        if (task.type==='poop') {
+          taskList.appendChild(renderPoopTask(task, td, status, T, today));
+        } else {
+          taskList.appendChild(renderCheckboxTask(task, td, status, T, today, winMap));
+        }
+      }
+      sectionEl.appendChild(taskList);
+    }
+    return sectionEl;
+  });
+
+  const content = div({style:{display:'flex',flexDirection:'column',gap:'2px'}});
+
+  if (showBanner) {
+    const banner = div({style:{background:'oklch(95% 0.09 50)',border:'1.5px solid oklch(76% 0.14 50)',borderRadius:'14px',padding:'16px',marginBottom:'14px',animation:'pop-in 0.22s ease'}},
+      div({style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}},
+        div({style:{flex:'1',minWidth:'0'}},
+          div({style:{fontSize:'14px',fontWeight:'700',color:'oklch(30% 0.13 50)',marginBottom:'5px'}},'📱 Heads up for Vivian'),
+          div({style:{fontSize:'14px',color:'oklch(32% 0.1 50)',lineHeight:'1.5',marginBottom:'10px'}},'Might be worth a quick text — ',el('strong',{},'405-315-6325')),
+          div({style:{display:'flex',flexWrap:'wrap',gap:'5px'}},
+            ...bannerReasons.map(r=>span({style:{fontSize:'12px',fontWeight:'600',background:'oklch(87% 0.14 50)',color:'oklch(28% 0.14 50)',padding:'4px 10px',borderRadius:'20px'}},r))
+          )
+        ),
+        btn({style:{background:'none',border:'none',padding:'2px',cursor:'pointer',color:'oklch(50% 0.1 50)',fontSize:'18px',lineHeight:'1',minHeight:'32px',minWidth:'32px',flexShrink:'0',display:'flex',alignItems:'center',justifyContent:'center',borderRadius:'6px'},
+          onclick:()=>{state.dismissedBannerReasons=[...bannerReasons];render();}
+        },'✕')
+      )
+    );
+    content.appendChild(banner);
+  }
+
+  sections.forEach(s=>content.appendChild(s));
+  return content;
+}
+
+// ─── DASHBOARD VIEW ──────────────────────────────────────────────────────────
+
+function dashTaskStatus(task, td, isToday, winMap) {
+  if (td.skipped)               return 'skipped';
+  if (td.checked||td.poopVal)   return 'logged';
+  if (!isToday)                 return 'missed';
+  const win = winMap[task.id];
+  if (!win)                     return 'upcoming';
+  const h = nowHours();
+  if (h < win[0])               return 'upcoming';
+  if (h <= win[1]+0.5)          return 'pending';
+  return 'missed';
+}
+
+function dashTaskColor(task, td, status) {
+  const pv = td.poopVal;
+  if (pv==='Bloody'||pv==='Mucus-y') return 'red';
+  if (td.abnormal)   return 'red';
+  if (status==='logged')  return 'green';
+  if (status==='skipped') return 'gray';
+  if (status==='pending') return 'yellow';
+  if (status==='missed')  return 'red';
+  return 'gray';
+}
+
+function renderDashboard(T) {
+  const today   = todayStr();
+  const safeDate = state.dashDate || today;
+  const dashData = getDayData(safeDate);
+  const winMap   = getWinMap(state.mealTimes);
+  const isToday  = safeDate===today;
+  const minDate  = dayOffset(today,-3);
+  const canGoBack = safeDate>minDate;
+  const canGoFwd  = safeDate<today;
+
+  let dashDateLabel = isToday ? 'Today' : (safeDate===dayOffset(today,-1) ? 'Yesterday' : null);
+  if (!dashDateLabel) {
+    try { dashDateLabel = new Date(safeDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'}); }
+    catch(e) { dashDateLabel = safeDate; }
+  }
+  const dashDateSub = isToday
+    ? new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})
+    : safeDate;
+
+  // Summary
+  let missed=0, pending=0, flagged=0;
+  const h = nowHours();
+  for (const task of ALL_SCHED) {
+    const td = dashData[task.id]||{};
+    if (td.checked||td.skipped||td.poopVal) continue;
+    if (!isToday){missed++;continue;}
+    const win = winMap[task.id];
+    if (!win) continue;
+    if (h>win[1]+0.5) missed++;
+    else if (h>=win[0]) pending++;
+  }
+  const pAM=(dashData.poop_am||{}).poopVal, pPM=(dashData.poop_pm||{}).poopVal;
+  if (pAM==='Bloody'||pAM==='Mucus-y') flagged++;
+  if (pPM==='Bloody'||pPM==='Mucus-y') flagged++;
+  if ((dashData.vomit||{}).checked)     flagged++;
+  if ((dashData.low_energy||{}).checked) flagged++;
+  if ((dashData.wiener_vis||{}).abnormal) flagged++;
+
+  let col, summaryText;
+  if (flagged>0||missed>0) {
+    col='red';
+    const parts=[];
+    if (missed>0)  parts.push(missed+' task'+(missed>1?'s':'')+' missed');
+    if (flagged>0) parts.push(flagged+' flag'+(flagged>1?'s':''));
+    summaryText=parts.join(', ');
+  } else if (pending>0) {
+    col='yellow'; summaryText=pending+' task'+(pending>1?'s':'')+' in progress';
+  } else {
+    col='green'; summaryText=isToday?'All clear so far today 🎉':'All tasks completed 🎉';
+  }
+  const sumDots  = {green:'oklch(55% 0.2 145)',yellow:'oklch(68% 0.17 80)',red:'oklch(58% 0.2 25)'};
+  const sumBgs   = {green:'oklch(95% 0.08 145)',yellow:'oklch(97% 0.07 80)',red:'oklch(97% 0.06 20)'};
+  const sumBrs   = {green:'oklch(76% 0.16 145)',yellow:'oklch(80% 0.14 80)',red:'oklch(80% 0.14 25)'};
+  const sumTcs   = {green:'oklch(28% 0.14 145)',yellow:'oklch(34% 0.13 80)',red:'oklch(32% 0.17 25)'};
+
+  // Section cards
+  const secDefs = [
+    { key:'morning', label:'Morning', icon:'☀️',  tasks:TASKS.morning  },
+    { key:'midday',  label:'Midday',  icon:'🌤️', tasks:TASKS.midday   },
+    { key:'evening', label:'Evening', icon:'🌙',  tasks:TASKS.evening  },
+  ];
+
+  const sectionCards = secDefs.map(sec=>{
+    const taskRows = sec.tasks.map(task=>{
+      const td = dashData[task.id]||{};
+      const status = dashTaskStatus(task, td, isToday, winMap);
+      const col2 = dashTaskColor(task, td, status);
+      const pv = td.poopVal;
+      const pc = pv ? (POOP_COL[pv]||'gray') : null;
+      const pp = pc ? PILL[pc] : null;
+
+      const badges = [];
+      if (pv) badges.push(span({style:{fontSize:'12px',fontWeight:'600',padding:'3px 10px',borderRadius:'20px',background:pp?pp.bg:'',color:pp?pp.color:''}},pv));
+      if (td.skipped) badges.push(span({style:{fontSize:'12px',color:T.sub,fontStyle:'italic'}},"wasn't hungry"));
+      if (td.abnormal&&task.id==='wiener_vis') badges.push(span({style:{fontSize:'12px',fontWeight:'600',padding:'3px 10px',borderRadius:'20px',background:'oklch(92% 0.12 25)',color:'oklch(36% 0.18 25)'}},'🚩 Abnormal'));
+
+      return div({style:{display:'flex',alignItems:'flex-start',gap:'10px',padding:'9px 0',borderBottom:`1px solid ${T.br}`}},
+        div({style:{width:'10px',height:'10px',borderRadius:'50%',background:DOT[col2],flexShrink:'0',marginTop:'5px'}}),
+        div({style:{flex:'1',minWidth:'0'}},
+          div({style:{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}},
+            span({style:{fontSize:'14px',fontWeight:'500',color:T.text}},`${task.emoji} ${task.name}`),
+            ...badges
+          ),
+          td.note ? div({style:{fontSize:'13px',color:T.sub,marginTop:'3px',lineHeight:'1.4',fontStyle:'italic'}},td.note) : null
+        )
+      );
+    });
+
+    return div({style:{background:T.card,borderRadius:'16px',padding:'16px',border:`1px solid ${T.br}`}},
+      div({style:{fontSize:'11px',fontWeight:'600',textTransform:'uppercase',letterSpacing:'0.1em',color:T.sub,marginBottom:'10px'}},`${sec.icon}  ${sec.label}`),
+      ...taskRows
+    );
+  });
+
+  // As-needed flagged
+  const flagged2 = TASKS.asNeeded.filter(t=>(dashData[t.id]||{}).checked);
+  const flaggedEl = flagged2.length>0 ? div({style:{background:T.card,borderRadius:'16px',padding:'16px',border:`1px solid ${T.br}`}},
+    div({style:{fontSize:'11px',fontWeight:'600',textTransform:'uppercase',letterSpacing:'0.1em',color:T.sub,marginBottom:'10px'}},'⚡  As-Needed'),
+    ...flagged2.map(t=>{
+      const td = dashData[t.id]||{};
+      const col2 = (t.id==='vomit'||t.id==='low_energy')?'red':'green';
+      return div({style:{display:'flex',alignItems:'flex-start',gap:'10px',padding:'9px 0',borderBottom:`1px solid ${T.br}`}},
+        div({style:{width:'10px',height:'10px',borderRadius:'50%',background:DOT[col2],flexShrink:'0',marginTop:'5px'}}),
+        div({style:{flex:'1',minWidth:'0'}},
+          div({style:{fontSize:'14px',fontWeight:'500',color:T.text}},`${t.emoji} ${t.name}`),
+          td.note ? div({style:{fontSize:'13px',color:T.sub,marginTop:'3px',lineHeight:'1.4',fontStyle:'italic'}},td.note) : null
+        )
+      );
+    })
+  ) : null;
+
+  const hasAny = Object.keys(dashData).length>0;
+  const emptyEl = !hasAny ? div({style:{textAlign:'center',padding:'48px 24px'}},
+    div({style:{fontSize:'44px',marginBottom:'12px'}},'📋'),
+    div({style:{fontSize:'15px',color:T.sub,lineHeight:'1.6'}},'No tasks logged for this day.')
+  ) : null;
+
+  return div({style:{display:'flex',flexDirection:'column',gap:'14px'}},
+    // Date navigator
+    div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px'}},
+      btn({style:{width:'44px',height:'44px',borderRadius:'12px',border:`1.5px solid ${T.br}`,background:T.card,fontSize:'20px',cursor:'pointer',color:canGoBack?T.text:T.br,display:'flex',alignItems:'center',justifyContent:'center'},
+        onclick:()=>{if(canGoBack){state.dashDate=dayOffset(safeDate,-1);render();}}
+      },'‹'),
+      div({style:{textAlign:'center',flex:'1'}},
+        div({style:{fontSize:'17px',fontWeight:'700',color:T.text,letterSpacing:'-0.2px'}},dashDateLabel),
+        div({style:{fontSize:'12px',color:T.sub,marginTop:'1px'}},dashDateSub)
+      ),
+      btn({style:{width:'44px',height:'44px',borderRadius:'12px',border:`1.5px solid ${T.br}`,background:T.card,fontSize:'20px',cursor:'pointer',color:canGoFwd?T.text:T.br,display:'flex',alignItems:'center',justifyContent:'center'},
+        onclick:()=>{if(canGoFwd){state.dashDate=dayOffset(safeDate,1);render();}}
+      },'›')
+    ),
+    // Summary
+    div({style:{background:sumBgs[col],border:`1.5px solid ${sumBrs[col]}`,borderRadius:'14px',padding:'14px 16px',display:'flex',alignItems:'center',gap:'12px'}},
+      div({style:{width:'12px',height:'12px',borderRadius:'50%',background:sumDots[col],flexShrink:'0'}}),
+      div({style:{fontSize:'15px',fontWeight:'500',color:sumTcs[col]}},summaryText)
+    ),
+    ...sectionCards,
+    flaggedEl,
+    emptyEl
+  );
+}
+
+// ─── SETUP VIEW ──────────────────────────────────────────────────────────────
+
+function renderSetup(T) {
+  const f = state.setupForm;
+  const warmBorder = f.theme==='warm' ? '2.5px solid oklch(50% 0.17 35)'  : `1.5px solid ${T.br}`;
+  const coolBorder = f.theme==='cool' ? '2.5px solid oklch(46% 0.15 170)' : `1.5px solid ${T.br}`;
+
+  function timeRow(emoji, label, key) {
+    const inp = el('input',{type:'time',style:{padding:'8px 12px',borderRadius:'10px',border:`1.5px solid ${T.br}`,fontSize:'15px',color:T.text,background:T.bg,minHeight:'44px'}});
+    inp.value = f[key]||'';
+    inp.addEventListener('change', e=>{state.setupForm={...state.setupForm,[key]:e.target.value};render();});
+    return div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'12px'}},
+      span({style:{fontSize:'15px',color:T.text}},`${emoji} ${label}`),
+      inp
+    );
+  }
+
+  const dogInput = el('input',{type:'text',placeholder:'Rascal',style:{width:'100%',padding:'14px 16px',borderRadius:'12px',border:`1.5px solid ${T.br}`,fontSize:'16px',color:T.text,background:T.bg}});
+  dogInput.value = f.dogName||'';
+  dogInput.addEventListener('input', e=>{state.setupForm={...state.setupForm,dogName:e.target.value};});
+
+  return div({style:{display:'flex',flexDirection:'column',gap:'12px'}},
+    // Dog name
+    div({style:{background:T.card,borderRadius:'16px',padding:'20px',border:`1px solid ${T.br}`}},
+      div({style:{fontSize:'11px',fontWeight:'600',textTransform:'uppercase',letterSpacing:'0.1em',color:T.sub,marginBottom:'12px'}},'Dog\'s Name'),
+      dogInput
+    ),
+    // Meal times
+    div({style:{background:T.card,borderRadius:'16px',padding:'20px',border:`1px solid ${T.br}`}},
+      div({style:{fontSize:'11px',fontWeight:'600',textTransform:'uppercase',letterSpacing:'0.1em',color:T.sub,marginBottom:'14px'}},'Meal Times'),
+      div({style:{display:'flex',flexDirection:'column',gap:'12px'}},
+        timeRow('🌅','Breakfast','breakfast'),
+        timeRow('🌤️','Lunch','lunch'),
+        timeRow('🌙','Dinner','dinner'),
+        timeRow('🌛','Bedtime snack','snack')
+      )
+    ),
+    // Theme
+    div({style:{background:T.card,borderRadius:'16px',padding:'20px',border:`1px solid ${T.br}`}},
+      div({style:{fontSize:'11px',fontWeight:'600',textTransform:'uppercase',letterSpacing:'0.1em',color:T.sub,marginBottom:'14px'}},'Color Theme'),
+      div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px'}},
+        btn({style:{border:warmBorder,borderRadius:'14px',padding:'18px 10px',background:'oklch(96% 0.02 60)',textAlign:'center',cursor:'pointer'},
+          onclick:()=>{state.setupForm={...state.setupForm,theme:'warm'};state.theme='warm';render();}
+        },
+          div({style:{fontSize:'26px',marginBottom:'5px'}},'🌞'),
+          div({style:{fontSize:'15px',fontWeight:'600',color:'oklch(18% 0.02 60)'}},'Warm'),
+          div({style:{fontSize:'12px',color:'oklch(52% 0.02 60)',marginTop:'2px'}},'Cream & Terracotta')
+        ),
+        btn({style:{border:coolBorder,borderRadius:'14px',padding:'18px 10px',background:'oklch(97% 0.01 250)',textAlign:'center',cursor:'pointer'},
+          onclick:()=>{state.setupForm={...state.setupForm,theme:'cool'};state.theme='cool';render();}
+        },
+          div({style:{fontSize:'26px',marginBottom:'5px'}},'🌿'),
+          div({style:{fontSize:'15px',fontWeight:'600',color:'oklch(17% 0.01 250)'}},'Cool'),
+          div({style:{fontSize:'12px',color:'oklch(50% 0.02 250)',marginTop:'2px'}},'White & Teal')
+        )
+      )
+    ),
+    // Save
+    btn({style:{width:'100%',padding:'16px',borderRadius:'14px',border:'none',background:T.accent,color:'white',fontSize:'17px',fontWeight:'700',cursor:'pointer',minHeight:'56px',transition:'opacity 0.15s'},
+      onclick:()=>{
+        state.dogName   = f.dogName||'Rascal';
+        state.theme     = f.theme||'warm';
+        state.mealTimes = {breakfast:f.breakfast,lunch:f.lunch,dinner:f.dinner,snack:f.snack};
+        state.setupDone = true;
+        state.view      = 'checklist';
+        save();
+        render();
+      }
+    },'Save Settings'),
+    // Data actions
+    div({style:{background:T.card,borderRadius:'16px',padding:'20px',border:`1px solid ${T.br}`,display:'flex',flexDirection:'column',gap:'8px'}},
+      div({style:{fontSize:'11px',fontWeight:'600',textTransform:'uppercase',letterSpacing:'0.1em',color:T.sub,marginBottom:'4px'}},'Data'),
+      btn({style:{width:'100%',padding:'14px 16px',borderRadius:'12px',border:`1.5px solid ${T.br}`,background:'none',fontSize:'16px',color:T.text,textAlign:'left',cursor:'pointer',minHeight:'52px'},
+        onclick:()=>{if(confirm("Reset today's tasks?")){const today=todayStr();const days={...state.days};delete days[today];state.days=days;save();render();}}
+      },"Reset today's tasks"),
+      btn({style:{width:'100%',padding:'14px 16px',borderRadius:'12px',border:'1.5px solid oklch(82% 0.08 25)',background:'none',fontSize:'16px',color:'oklch(48% 0.17 25)',textAlign:'left',cursor:'pointer',minHeight:'52px'},
+        onclick:()=>{if(confirm('Clear all data? This cannot be undone.')){state.days={};state.setupDone=false;save();render();}}
+      },'Clear all data')
+    ),
+    // About
+    div({style:{background:T.card,borderRadius:'16px',padding:'20px',border:`1px solid ${T.br}`}},
+      div({style:{fontSize:'14px',color:T.sub,lineHeight:'1.75'}},
+        el('strong',{style:{color:T.text,fontWeight:'600'}},"Kim's checklist"),
+        ' — Log daily health tasks',el('br'),
+        el('strong',{style:{color:T.text,fontWeight:'600'}},"Vivian's dashboard"),
+        ' — Read-only, up to 3 days back',el('br'),
+        'Tasks reset each day. Data saved locally.'
+      )
+    )
+  );
+}
+
+// ─── MAIN RENDER ─────────────────────────────────────────────────────────────
+
+function render() {
+  const T = THEMES[state.theme]||THEMES.warm;
+  const today = todayStr();
+  const todayData = getDayData(today);
+
+  // Progress
+  const done = ALL_SCHED.filter(t=>{const td=todayData[t.id]||{};return td.checked||td.skipped||td.poopVal;}).length;
+  const pct  = ALL_SCHED.length ? Math.round(done/ALL_SCHED.length*100) : 0;
+
+  const dateStr = new Date().toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
+
+  // Header
+  const progressWidget = state.view==='checklist' ? div({style:{textAlign:'right',flexShrink:'0'}},
+    div({style:{fontSize:'13px',fontWeight:'500',color:T.sub}},`${done} / ${ALL_SCHED.length}`),
+    div({style:{width:'72px',height:'5px',borderRadius:'3px',background:T.br,marginTop:'6px',overflow:'hidden'}},
+      div({style:{height:'100%',width:pct+'%',background:T.accent,borderRadius:'3px',transition:'width 0.4s ease'}})
+    )
+  ) : state.view==='dashboard' ? span({style:{fontSize:'12px',fontWeight:'600',color:T.sub,background:T.br,padding:'4px 10px',borderRadius:'20px',letterSpacing:'0.02em'}},'read-only') : null;
+
+  const header = el('header',{style:{position:'sticky',top:'0',zIndex:'50',background:T.bg,borderBottom:`1px solid ${T.br}`,padding:'16px 20px 12px'}},
+    div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'12px'}},
+      div({},
+        el('h1',{style:{margin:'0',fontSize:'21px',fontWeight:'700',lineHeight:'1.2',letterSpacing:'-0.3px'}},`🐾 ${state.dogName||'Rascal'}`),
+        el('p',{style:{margin:'0',fontSize:'13px',color:T.sub,marginTop:'2px'}},dateStr)
+      ),
+      progressWidget
+    )
+  );
+
+  // Main content
+  let mainContent;
+  if (state.view==='checklist') mainContent = renderChecklist(T);
+  else if (state.view==='dashboard') mainContent = renderDashboard(T);
+  else mainContent = renderSetup(T);
+
+  const main = el('main',{style:{flex:'1',padding:'12px 16px 100px'}},mainContent);
+
+  // Bottom nav
+  const navBtn = (icon, label, view) => btn({
+    style:{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',padding:'10px 8px 14px',background:'none',border:'none',cursor:'pointer',color:state.view===view?T.accent:T.sub,minHeight:'60px'},
+    onclick:()=>{state.view=view;render();}
+  },
+    span({style:{fontSize:'22px',lineHeight:'1'}},icon),
+    span({style:{fontSize:'11px',fontWeight:state.view===view?'600':'400'}},label)
+  );
+
+  const nav = el('nav',{style:{position:'fixed',bottom:'0',left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:'480px',background:T.card,borderTop:`1px solid ${T.br}`,display:'grid',gridTemplateColumns:'1fr 1fr 1fr',zIndex:'50'}},
+    navBtn('✅','Kim','checklist'),
+    navBtn('📊','Vivian','dashboard'),
+    navBtn('⚙️','Setup','setup')
+  );
+
+  const inner = div({style:{maxWidth:'480px',margin:'0 auto',minHeight:'100vh',display:'flex',flexDirection:'column'}},
+    header, main, nav
+  );
+
+  const root = div({style:{minHeight:'100vh',background:T.bg,color:T.text}}, inner);
+
+  document.body.style.background = T.bg;
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  app.appendChild(root);
+}
+
+// ─── INIT ────────────────────────────────────────────────────────────────────
+
+load();
+render();
+setInterval(render, 60000);
+</script>
+</body>
+</html>
