@@ -160,7 +160,10 @@ function load() {
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
 
-function todayStr() { return new Date().toISOString().slice(0,10); }
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
 
 function dayOffset(date, n) {
   const d = new Date(date + 'T12:00:00');
@@ -704,7 +707,7 @@ function renderSetup(T) {
         ' — Log daily health tasks',el('br'),
         el('strong',{style:{color:T.text,fontWeight:'600'}},"Vivian's dashboard"),
         ' — Read-only, up to 3 days back',el('br'),
-        'Tasks reset each day. Data saved locally.'
+        'Tasks reset each day. Data synced via Firebase.'
       )
     )
   );
